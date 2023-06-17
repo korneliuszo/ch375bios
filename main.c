@@ -3,6 +3,7 @@
 #include "biosint.h"
 #include "inlines.h"
 #include <string.h>
+#include <stdbool.h>
 
 typedef struct {
 	uint16_t es;
@@ -75,6 +76,79 @@ uint32_t to_lba(IRQ_DATA far * params)
 	return ((c*255+h)*63+ s-1);
 }
 
+bool checkdisk()
+{
+	while(1)
+	{
+		uint8_t stat = get_status();
+		if(stat==0x15)
+		{
+			restart_ch();
+			continue;
+		}
+		if(stat==0x16)
+		{
+			return false;
+		}
+		break;
+	}
+	return true;
+}
+
+bool readdisk(uint32_t lba, uint8_t far * data,uint8_t len)
+{
+	outb(CH375_CMD_ADDR,0x54);//DISK_READ
+	outb(CH375_DATA_ADDR,lba);
+	outb(CH375_DATA_ADDR,lba>>8);
+	outb(CH375_DATA_ADDR,lba>>16);
+	outb(CH375_DATA_ADDR,lba>>24);
+	outb(CH375_DATA_ADDR,len);
+	uint16_t l2=((uint16_t)len)*8;
+	while(l2--)
+	{
+		wfi();
+		if(get_status() !=0x1d)
+		{
+			return false;
+		}
+		outb(CH375_CMD_ADDR,0x28);//RD_USB_DATA
+		inb(CH375_DATA_ADDR); // should always get 64
+		for(uint8_t i=0;i<64;i++)
+			*data++=inb(CH375_DATA_ADDR);
+		outb(CH375_CMD_ADDR,0x55);//DISK_RD_GO
+	}
+	wfi();
+	if(get_status() !=0x14)
+	{
+		return false;
+	}
+	return true;
+}
+
+uint32_t get_max_lba()
+{
+	outb(CH375_CMD_ADDR,0x53);//DISK_SIZE
+	wfi();
+	uint8_t stat = get_status();
+	if(stat!=0x14)
+	{
+		return 0xffffffff; //error
+	}
+	outb(CH375_CMD_ADDR,0x28);//RD_USB_DATA
+	inb(CH375_DATA_ADDR); // should always get 8
+	uint32_t s24=inb(CH375_DATA_ADDR);
+	uint32_t s16=inb(CH375_DATA_ADDR);
+	uint32_t s8=inb(CH375_DATA_ADDR);
+	uint32_t s0=inb(CH375_DATA_ADDR);
+	inb(CH375_DATA_ADDR); // should check
+	inb(CH375_DATA_ADDR); // if it is really 512
+	inb(CH375_DATA_ADDR);
+	inb(CH375_DATA_ADDR);
+	uint32_t lba = (s24<<24) | (s16<<16) |
+			       (s8 << 8) | (s0 << 0);
+	return lba;
+}
+
 int start(uint16_t irq, IRQ_DATA far * params)
 {
 	(void) params;
@@ -107,11 +181,12 @@ int start(uint16_t irq, IRQ_DATA far * params)
 		{
 			return 1;
 		}
+		bios_printf(BIOS_PRINTF_ALL,"but %x\n",(params->ax>>8));
 
 		switch(params->ax>>8)
 		{
 		default:
-			bios_printf(BIOS_PRINTF_ALL,"bu %d\n",(params->ax>>8));
+			bios_printf(BIOS_PRINTF_ALL,"bu %x\n",(params->ax>>8));
 			params->ax = 0x0101;
 			params->rf |= 0x0001; //cf failure
 			return 0;
@@ -123,50 +198,17 @@ int start(uint16_t irq, IRQ_DATA far * params)
 			break;
 		case 0x02:
 		{
-			while(1)
+			if(!checkdisk())
 			{
-				uint8_t stat = get_status();
-				if(stat==0x15)
-				{
-					restart_ch();
-					continue;
-				}
-				if(stat==0x16)
-				{
-					params->ax = 0x0600;
-					params->rf |= 0x0001; //cf failure
-					return 0;
-				}
-				break;
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				return 0;
 			}
 			uint8_t len = params->ax;
 			uint32_t lba = to_lba(params);
 			__segment es = params->es;
 			uint8_t __far * data = es:>(uint8_t __far*)params->bx;
-			outb(CH375_CMD_ADDR,0x54);//DISK_READ
-			outb(CH375_DATA_ADDR,lba);
-			outb(CH375_DATA_ADDR,lba>>8);
-			outb(CH375_DATA_ADDR,lba>>16);
-			outb(CH375_DATA_ADDR,lba>>24);
-			outb(CH375_DATA_ADDR,len);
-			uint16_t l2=((uint16_t)len)*8;
-			while(l2--)
-			{
-				wfi();
-				if(get_status() !=0x1d)
-				{
-					params->ax = 0x4000;
-					params->rf |= 0x0001; //cf failure
-					return 0;
-				}
-				outb(CH375_CMD_ADDR,0x28);//RD_USB_DATA
-				inb(CH375_DATA_ADDR); // should always get 64
-				for(uint8_t i=0;i<64;i++)
-					*data++=inb(CH375_DATA_ADDR);
-				outb(CH375_CMD_ADDR,0x55);//DISK_RD_GO
-			}
-			wfi();
-			if(get_status() !=0x14)
+			if(!readdisk(lba,data,len))
 			{
 				params->ax = 0x4000;
 				params->rf |= 0x0001; //cf failure
@@ -176,43 +218,19 @@ int start(uint16_t irq, IRQ_DATA far * params)
 		}
 		case 0x08:
 		{
-			while(1)
-			{
-				uint8_t stat = get_status();
-				if(stat==0x15)
-				{
-					restart_ch();
-					continue;
-				}
-				if(stat==0x16)
-				{
-					params->ax = 0x0600;
-					params->rf |= 0x0001; //cf failure
-					return 0;
-				}
-				break;
-			}
-			outb(CH375_CMD_ADDR,0x53);//DISK_SIZE
-			wfi();
-			uint8_t stat = get_status();
-			if(stat!=0x14)
+			if(!checkdisk())
 			{
 				params->ax = 0x0600;
 				params->rf |= 0x0001; //cf failure
 				return 0;
 			}
-			outb(CH375_CMD_ADDR,0x28);//RD_USB_DATA
-			inb(CH375_DATA_ADDR); // should always get 8
-			uint32_t s24=inb(CH375_DATA_ADDR);
-			uint32_t s16=inb(CH375_DATA_ADDR);
-			uint32_t s8=inb(CH375_DATA_ADDR);
-			uint32_t s0=inb(CH375_DATA_ADDR);
-			inb(CH375_DATA_ADDR); // should check
-			inb(CH375_DATA_ADDR); // if it is really 512
-			inb(CH375_DATA_ADDR);
-			inb(CH375_DATA_ADDR);
-			uint32_t lba = (s24<<24) | (s16<<16) |
-					       (s8 << 8) | (s0 << 0);
+			uint32_t lba = get_max_lba();
+			if (lba == 0xffffffff)
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
 			uint32_t cyls = lba / (63*255);
 			if(cyls > 1024)
 				cyls = 1024;
