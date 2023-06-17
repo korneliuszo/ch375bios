@@ -23,6 +23,27 @@ typedef struct {
 	uint16_t rf;
 } IRQ_DATA;
 
+typedef _Packed struct {
+	uint8_t len;
+	uint8_t unused;
+	uint16_t sectors;
+	uint16_t off;
+	__segment seg;
+	uint32_t lbal;
+	uint32_t lbah; // not care as 2TB limit
+} DAP;
+
+typedef _Packed struct {
+	uint16_t len;
+	uint16_t iflags;
+	uint32_t cylinders;
+	uint32_t heads;
+	uint32_t sectors_pt;
+	uint64_t sectors;
+	uint16_t bps;
+	uint32_t eddp;
+} EDDP;
+
 int __cdecl start(uint16_t irq, IRQ_DATA far * params);
 
 void __cdecl install13h();
@@ -95,7 +116,7 @@ bool checkdisk()
 	return true;
 }
 
-bool readdisk(uint32_t lba, uint8_t far * data,uint8_t len)
+bool readdisk(uint32_t lba, uint8_t far * data,uint16_t len)
 {
 	outb(CH375_CMD_ADDR,0x54);//DISK_READ
 	outb(CH375_DATA_ADDR,lba);
@@ -181,7 +202,6 @@ int start(uint16_t irq, IRQ_DATA far * params)
 		{
 			return 1;
 		}
-		bios_printf(BIOS_PRINTF_ALL,"but %x\n",(params->ax>>8));
 
 		switch(params->ax>>8)
 		{
@@ -240,6 +260,80 @@ int start(uint16_t irq, IRQ_DATA far * params)
 			params->dx = (254<<8) | 0x01;
 			params->di = 0;
 			params->es = 0;
+			break;
+		}
+		case 0x15:
+		{
+			if(!checkdisk())
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			uint32_t lba = get_max_lba();
+			if (lba == 0xffffffff)
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			params->ax = 0x03;
+			params->cx = lba>>16;
+			params->dx = lba;
+			break;
+		}
+		case 0x41:
+		{
+			params->bx = 0xAA55;
+			params->cx = 0x01;
+			params->ax = 0x21 | (params->ax &0xff);
+			params->rf &= ~0x0001; //cf success
+			return 0;
+			break;
+		}
+		case 0x42:
+		{
+			if(!checkdisk())
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			DAP __far * dap = params->ds:>(DAP __far*)params->si;
+			__segment dats = dap->seg;
+			uint8_t __far * data = dats:>(uint8_t __far*)dap->off;
+			if(!readdisk(dap->lbal,data,dap->sectors))
+			{
+				params->ax = 0x4000;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			break;
+		}
+		case 0x48:
+		{
+			if(!checkdisk())
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			uint32_t lba = get_max_lba();
+			if (lba == 0xffffffff)
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			uint32_t cyls = lba / (63*255);
+			EDDP __far * eddp = params->ds:>(EDDP __far*)params->si;
+			eddp->iflags = 0;
+			eddp->cylinders = cyls;
+			eddp->heads = 255;
+			eddp->sectors_pt = 63;
+			eddp->sectors = lba;
+			eddp->bps = 512;
+			eddp->eddp = 0;
 			break;
 		}
 		}
