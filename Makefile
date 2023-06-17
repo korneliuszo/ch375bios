@@ -7,7 +7,7 @@ default: optionrom.bin
 all: default
 
 %.obj: %.c inlines.h biosint.h
-	${WATCOM}/binl64/wcc -0 -wx -s -oatx -hd -d0 -ms -zu -za99 -we  -fo$@ $<
+	${WATCOM}/binl64/wcc -0 -wx -s -oatxh -hd -d0 -ms -zu -za99 -we  -fo$@ $<
 
 %.obj: %.S 
 	${WATCOM}/binl64/wasm -0 -wx -ms -fo$@ $<
