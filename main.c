@@ -146,6 +146,70 @@ bool readdisk(uint32_t lba, uint8_t far * data,uint16_t len)
 	return true;
 }
 
+bool writedisk(uint32_t lba, uint8_t far * data,uint16_t len)
+{
+	outb(CH375_CMD_ADDR,0x56);//DISK_WRITE
+	outb(CH375_DATA_ADDR,lba);
+	outb(CH375_DATA_ADDR,lba>>8);
+	outb(CH375_DATA_ADDR,lba>>16);
+	outb(CH375_DATA_ADDR,lba>>24);
+	outb(CH375_DATA_ADDR,len);
+	uint16_t l2=((uint16_t)len)*8;
+	while(l2--)
+	{
+		wfi();
+		if(get_status() !=0x1e)
+		{
+			return false;
+		}
+		outb(CH375_CMD_ADDR,0x2B);//WR_USB_DATA7
+		outb(CH375_DATA_ADDR,64);
+		for(uint8_t i=0;i<64;i++)
+			outb(CH375_DATA_ADDR, *data++);
+		outb(CH375_CMD_ADDR,0x57);//DISK_WR_GO
+	}
+	wfi();
+	if(get_status() !=0x14)
+	{
+		return false;
+	}
+	return true;
+}
+
+bool verifydisk(uint32_t lba, uint8_t far * data,uint16_t len)
+{
+	outb(CH375_CMD_ADDR,0x54);//DISK_READ
+	outb(CH375_DATA_ADDR,lba);
+	outb(CH375_DATA_ADDR,lba>>8);
+	outb(CH375_DATA_ADDR,lba>>16);
+	outb(CH375_DATA_ADDR,lba>>24);
+	outb(CH375_DATA_ADDR,len);
+	uint16_t l2=((uint16_t)len)*8;
+	bool good = true;
+	while(l2--)
+	{
+		wfi();
+		if(get_status() !=0x1d)
+		{
+			return false;
+		}
+		outb(CH375_CMD_ADDR,0x28);//RD_USB_DATA
+		inb(CH375_DATA_ADDR); // should always get 64
+		for(uint8_t i=0;i<64;i++)
+			if(*data++!=inb(CH375_DATA_ADDR))
+			{
+				good = false; // we probably read rest than reset 40ms
+			}
+		outb(CH375_CMD_ADDR,0x55);//DISK_RD_GO
+	}
+	wfi();
+	if(get_status() !=0x14)
+	{
+		return false;
+	}
+	return good;
+}
+
 uint32_t get_max_lba()
 {
 	outb(CH375_CMD_ADDR,0x53);//DISK_SIZE
@@ -253,6 +317,46 @@ int start(uint16_t irq, IRQ_DATA far * params)
 			}
 			break;
 		}
+		case 0x03: //WRITE
+		{
+			if(!checkdisk())
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			uint8_t len = params->ax;
+			uint32_t lba = to_lba(params);
+			__segment es = params->es;
+			uint8_t __far * data = es:>(uint8_t __far*)params->bx;
+			if(!writedisk(lba,data,len))
+			{
+				params->ax = 0x4000;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			break;
+		}
+		case 0x04: //VERIFY
+		{
+			if(!checkdisk())
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			uint8_t len = params->ax;
+			uint32_t lba = to_lba(params);
+			__segment es = params->es;
+			uint8_t __far * data = es:>(uint8_t __far*)params->bx;
+			if(!verifydisk(lba,data,len))
+			{
+				params->ax = 0x4000;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			break;
+		}
 		case 0x08: // get attributes
 		{
 			if(!checkdisk())
@@ -320,6 +424,46 @@ int start(uint16_t irq, IRQ_DATA far * params)
 			}
 			uint8_t __far * data = dap->seg:>(uint8_t __far*)dap->off;
 			if(!readdisk(dap->lbal,data,dap->sectors))
+			{
+				params->ax = 0x4000;
+				params->rf |= 0x0001; //cf failure
+				dap->sectors = 0;
+				return 0;
+			}
+			break;
+		}
+		case 0x43: // ext write
+		{
+			DAP __far * dap = params->ds:>(DAP __far*)params->si;
+			if(!checkdisk())
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				dap->sectors = 0;
+				return 0;
+			}
+			uint8_t __far * data = dap->seg:>(uint8_t __far*)dap->off;
+			if(!writedisk(dap->lbal,data,dap->sectors))
+			{
+				params->ax = 0x4000;
+				params->rf |= 0x0001; //cf failure
+				dap->sectors = 0;
+				return 0;
+			}
+			break;
+		}
+		case 0x44: // ext verify
+		{
+			DAP __far * dap = params->ds:>(DAP __far*)params->si;
+			if(!checkdisk())
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				dap->sectors = 0;
+				return 0;
+			}
+			uint8_t __far * data = dap->seg:>(uint8_t __far*)dap->off;
+			if(!verifydisk(dap->lbal,data,dap->sectors))
 			{
 				params->ax = 0x4000;
 				params->rf |= 0x0001; //cf failure
