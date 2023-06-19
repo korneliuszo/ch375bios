@@ -293,19 +293,20 @@ int start(uint16_t irq, IRQ_DATA far * params)
 		}
 		case 0x42:
 		{
+			DAP __far * dap = params->ds:>(DAP __far*)params->si;
 			if(!checkdisk())
 			{
 				params->ax = 0x0600;
 				params->rf |= 0x0001; //cf failure
+				dap->sectors = 0;
 				return 0;
 			}
-			DAP __far * dap = params->ds:>(DAP __far*)params->si;
-			__segment dats = dap->seg;
-			uint8_t __far * data = dats:>(uint8_t __far*)dap->off;
+			uint8_t __far * data = dap->seg:>(uint8_t __far*)dap->off;
 			if(!readdisk(dap->lbal,data,dap->sectors))
 			{
 				params->ax = 0x4000;
 				params->rf |= 0x0001; //cf failure
+				dap->sectors = 0;
 				return 0;
 			}
 			break;
