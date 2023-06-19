@@ -207,16 +207,33 @@ int start(uint16_t irq, IRQ_DATA far * params)
 		{
 		default:
 			bios_printf(BIOS_PRINTF_ALL,"bu %x\n",(params->ax>>8));
+		case 0x23: // set features
+		case 0x24: // set multiple blocks
+		case 0x25: // identify drive
 			params->ax = 0x0101;
 			params->rf |= 0x0001; //cf failure
 			return 0;
 			break;
-		case 0x00:
-		case 0x01:
-		case 0x0d:
+		case 0x00: //RESET
+			return 1;
+		case 0x01: // STATUS
+		case 0x09: // Init DISK
+		case 0x0d: // ARESET
+		case 0x0c: //seek
+		case 0x47: //eseek
 			params->ax = 0;
 			break;
-		case 0x02:
+		case 0x10: //driveready
+		case 0x11: //recalibrate
+		case 0x14: //diagostic
+			if(!checkdisk())
+			{
+				params->ax = 0x0600;
+				params->rf |= 0x0001; //cf failure
+				return 0;
+			}
+			break;
+		case 0x02: //READ
 		{
 			if(!checkdisk())
 			{
@@ -236,7 +253,7 @@ int start(uint16_t irq, IRQ_DATA far * params)
 			}
 			break;
 		}
-		case 0x08:
+		case 0x08: // get attributes
 		{
 			if(!checkdisk())
 			{
@@ -262,7 +279,7 @@ int start(uint16_t irq, IRQ_DATA far * params)
 			params->es = 0;
 			break;
 		}
-		case 0x15:
+		case 0x15: // get disk type
 		{
 			if(!checkdisk())
 			{
@@ -282,7 +299,7 @@ int start(uint16_t irq, IRQ_DATA far * params)
 			params->dx = lba;
 			break;
 		}
-		case 0x41:
+		case 0x41: // ext check
 		{
 			params->bx = 0xAA55;
 			params->cx = 0x01;
@@ -291,7 +308,7 @@ int start(uint16_t irq, IRQ_DATA far * params)
 			return 0;
 			break;
 		}
-		case 0x42:
+		case 0x42: // ext read
 		{
 			DAP __far * dap = params->ds:>(DAP __far*)params->si;
 			if(!checkdisk())
@@ -311,7 +328,7 @@ int start(uint16_t irq, IRQ_DATA far * params)
 			}
 			break;
 		}
-		case 0x48:
+		case 0x48: // ext parameters
 		{
 			if(!checkdisk())
 			{
