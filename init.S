@@ -25,8 +25,8 @@ install_irq label near
 	mov WORD PTR ds:[019h*4], offset _TEXT:init
 	mov WORD PTR ds:[019h*4+2], cs
 
-	mov	WORD PTR ds:[032h*4], ax
-	mov	WORD PTR ds:[032h*4+2], es
+	mov	WORD PTR ds:[0b5h*4], ax
+	mov	WORD PTR ds:[0b5h*4+2], es
 
 SkipRomInitialization:
 	pop ax
@@ -101,7 +101,7 @@ irq_entry proc near
 
 	cmp si, 0
 	jnz puti13
-	les	bx, es:[032h*4]
+	les	bx, es:[0b5h*4]
 	jmp get_done
 puti13 label near
 	les	bx, es:[034h*4]
