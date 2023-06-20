@@ -81,9 +81,12 @@ void restart_ch()
 	outb(CH375_CMD_ADDR,0x15);//SET_USB_MODE
 	outb(CH375_DATA_ADDR,0x06);//host autosof
 	uint8_t s;
+	uint16_t cntr=0;
 	do{
-		s= get_status();
-	}while(s!=0x15 && s!=0x16 && s!=0x34); // hack to not use delay
+
+	}while(++cntr); // 2us delayish
+	s= get_status();
+	bios_printf(BIOS_PRINTF_ALL,"Detection prestatus %x\n",s);
 	outb(CH375_CMD_ADDR,0x51);//DISK_INIT
 	wfi();
 	get_status();
@@ -239,7 +242,7 @@ int start(uint16_t irq, IRQ_DATA far * params)
 	(void) params;
 	if (irq==0)
 	{
-		bios_printf(BIOS_PRINTF_ALL,"CH375 BIOS by Kaede v1.2\n");
+		bios_printf(BIOS_PRINTF_ALL,"CH375 BIOS by Kaede v1.3\n");
 		outb(CH375_CMD_ADDR,0x06);//check exists
 		outb(CH375_DATA_ADDR,0xA5);
 		if(inb(CH375_DATA_ADDR)!=0x5A)
