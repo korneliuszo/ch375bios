@@ -410,7 +410,7 @@ int start(uint16_t irq, IRQ_DATA far * params)
 		{
 			params->bx = 0xAA55;
 			params->cx = 0x01;
-			params->ax = 0x21 | (params->ax &0xff);
+			params->ax = 0x2100 | (params->ax &0xff);
 			params->rf &= ~0x0001; //cf success
 			return 0;
 			break;
