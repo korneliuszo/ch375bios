@@ -382,8 +382,7 @@ int start(uint16_t irq, IRQ_DATA far * params)
 			params->bx = 0;
 			params->cx = ((cyls&0xff) <<8) | ((cyls&0x300)>>(8-6)) | 63;
 			params->dx = (254<<8) | 0x01;
-			params->di = 0;
-			params->es = 0;
+			// di es not touched as it's HDD
 			break;
 		}
 		case 0x15: // get disk type
