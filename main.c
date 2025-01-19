@@ -233,6 +233,10 @@ int start(uint16_t irq, IRQ_DATA far * params)
 	{
 		if(((uint8_t)params->dx) != 0x80) // not our drive
 		{
+			if(((uint8_t)params->dx)&0x80)
+			{
+				params->dx = (params->dx&0xff00) | ((params->dx&0x00ff) -1);
+			}
 			return 1;
 		}
 
