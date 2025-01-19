@@ -208,7 +208,7 @@ int start(uint16_t irq, IRQ_DATA far * params)
 	(void) params;
 	if (irq==0)
 	{
-		bios_printf(BIOS_PRINTF_ALL,"CH375 BIOS by Kaede v1.5\n");
+		bios_printf(BIOS_PRINTF_ALL,"CH375 BIOS by Kaede v1.5+\n");
 		outb(CH375_CMD_ADDR,0x06);//check exists
 		outb(CH375_DATA_ADDR,0xA5);
 		if(inb(CH375_DATA_ADDR)!=0x5A)
